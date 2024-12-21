@@ -58,13 +58,17 @@ class OrderQueue:
         print(f"Order {modify_request.m_orderId} modified.")
 
     def cancel_order(self, cancel_request):
-        """
-        cancel an order in the queue and the dict
-        
-        params:
-            cancel_request: the cancel request to process
-        """
+        """Cancel an existing order"""
         if cancel_request.m_orderId in self.orders:
-            self.queue.remove(self.orders[cancel_request.m_orderId])
+            # Remove from orders dictionary
+            order = self.orders[cancel_request.m_orderId]
             del self.orders[cancel_request.m_orderId]
+            
+            # Try to remove from queue if it's still there
+            try:
+                self.queue.remove(order)
+            except ValueError:
+                # Order might have already been processed/removed from queue
+                pass
+            
             print(f"Order {cancel_request.m_orderId} canceled.")

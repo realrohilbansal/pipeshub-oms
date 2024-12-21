@@ -1,58 +1,56 @@
 import time
-from threading import Lock, Thread
+import threading
+from queue import Empty
 
 class OrderProcessor:
     """
-    Processes orders and sends them to the exchange (rate limited)
+    Processes orders from the queue at a rate-limited pace
     """
     def __init__(self, order_rate_limit, order_queue):
-        self.order_rate_limit = order_rate_limit  # tokens per second
+        self.order_rate_limit = order_rate_limit
         self.order_queue = order_queue
-        self.lock = Lock()
-        
-        # Token bucket parameters
         self.tokens = order_rate_limit  # Start with full bucket
         self.max_tokens = order_rate_limit
-        self.last_update = time.time()
-        
-        # Start processing thread
+        self.last_token_time = time.time()
+        self.lock = threading.Lock()
         self.running = True
-        self.processing_thread = Thread(target=self.process_queue, daemon=True)
-        self.processing_thread.start()
 
     def refill_tokens(self):
-        """Refills tokens based on elapsed time"""
+        """Refill tokens based on elapsed time"""
         now = time.time()
-        time_passed = now - self.last_update
+        time_passed = now - self.last_token_time
         new_tokens = time_passed * self.order_rate_limit
         self.tokens = min(self.tokens + new_tokens, self.max_tokens)
-        self.last_update = now
+        self.last_token_time = now
 
     def process_queue(self):
-        """Processes the order queue using token bucket algorithm"""
+        """Process orders from the queue at the rate limit"""
         while self.running:
-            if self.order_queue.queue:
+            try:
+                # Check if we have tokens available
                 with self.lock:
                     self.refill_tokens()
-                    
-                    if self.tokens >= 1:
+                    if self.tokens >= 1 and len(self.order_queue.queue) > 0:
                         order = self.order_queue.queue.popleft()
-                        self.send(order)
                         self.tokens -= 1
+                        self.send(order)
                     
-            time.sleep(0.01)  # Small sleep to prevent CPU spinning
+                # Sleep briefly to prevent busy-waiting
+                time.sleep(0.1)
+                    
+            except Empty:
+                # No orders in queue, wait briefly
+                time.sleep(0.1)
+            except Exception as e:
+                print(f"Error processing order: {e}")
+                time.sleep(0.1)
 
     def send(self, order):
-        """
-        Sends an order to the exchange in a thread-safe manner
-        """
-        with self.lock:
-            print(f"Order {order.m_orderId} sent to exchange.")
+        """Simulate sending order to exchange"""
+        print(f"Sending order {order.m_orderId} to exchange")
+        # Simulate network delay
+        time.sleep(0.05)
 
     def stop(self):
-        """
-        Stops the processing thread
-        """
+        """Stop the processor"""
         self.running = False
-        if self.processing_thread.is_alive():
-            self.processing_thread.join()

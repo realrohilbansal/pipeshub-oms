@@ -17,13 +17,22 @@ class OrderManagement:
     """
     Manages the order queue and processes orders
     """
-    def __init__(self, start_time, end_time, order_rate_limit):
+    def __init__(self, start_time, end_time, order_rate_limit, response_storage_path="responses.json"):
+        """
+        Initialize the order management system
+        
+        Args:
+            start_time (time): Trading start time
+            end_time (time): Trading end time
+            order_rate_limit (int): Maximum orders per second
+            response_storage_path (str): Path to store response data
+        """
         self.start_time = start_time
         self.end_time = end_time
         self.order_queue = OrderQueue()
         self.order_processor = OrderProcessor(order_rate_limit, self.order_queue)
-        self.response_handler = ResponseHandler(self.order_queue)
-        self.active = False
+        self.response_handler = ResponseHandler(self.order_queue, storage_path=response_storage_path)
+        self.is_logged_on = False
 
         # Add thread for order processing
         self.processing_thread = threading.Thread(
@@ -40,8 +49,8 @@ class OrderManagement:
         return self.start_time <= current_time <= self.end_time
 
     def logon(self):
-        if not self.active and self.is_within_time_window():
-            self.active = True
+        if not self.is_logged_on and self.is_within_time_window():
+            self.is_logged_on = True
             # Thread-safe logon
             threading.Thread(
                 target=lambda: print("Logon message sent to exchange"),
@@ -49,8 +58,8 @@ class OrderManagement:
             ).start()
 
     def logout(self):
-        if self.active and not self.is_within_time_window():
-            self.active = False
+        if self.is_logged_on and not self.is_within_time_window():
+            self.is_logged_on = False
             # Thread-safe logout
             threading.Thread(
                 target=lambda: print("Logout message sent to exchange"),
@@ -82,7 +91,7 @@ class OrderManagement:
 if __name__ == "__main__":
     order_management = OrderManagement(
         start_time=datetime.strptime("10:00:00", "%H:%M:%S").time(),
-        end_time=datetime.strptime("18:00:00", "%H:%M:%S").time(),
+        end_time=datetime.strptime("19:00:00", "%H:%M:%S").time(),
         order_rate_limit=5,
     )
 

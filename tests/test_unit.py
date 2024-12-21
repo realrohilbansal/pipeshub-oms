@@ -2,6 +2,8 @@ import unittest
 
 import os
 import sys
+import tempfile
+from pathlib import Path
 
 cwd = os.getcwd()
 if cwd.endswith("tests"):
@@ -23,6 +25,15 @@ class TestOrderSystem(unittest.TestCase):
         self.start_time = time(10, 0)
         self.end_time = time(18, 0)
         self.order_management = OrderManagement(self.start_time, self.end_time, 5)
+        # Create a temporary file for response storage
+        self.temp_dir = tempfile.mkdtemp()
+        self.storage_path = Path(self.temp_dir) / "test_responses.json"
+
+    def tearDown(self):
+        # Clean up temporary files
+        if self.storage_path.exists():
+            self.storage_path.unlink()
+        os.rmdir(self.temp_dir)
 
     def create_sample_order(self):
         return OrderRequest(
@@ -130,16 +141,27 @@ class TestOrderSystem(unittest.TestCase):
 
     # ResponseHandler Tests
     def test_response_handler(self):
-        handler = ResponseHandler(self.order_queue)
+        handler = ResponseHandler(self.order_queue, storage_path=self.storage_path)
         order = self.create_sample_order()
         self.order_queue.add_order(order)
         
         response = OrderResponse(123, ResponseType.Accept)
         handler.handle_response(response)
         
+        # Test in-memory responses
         self.assertEqual(len(handler.responses), 1)
         self.assertEqual(handler.responses[0]['order_id'], 123)
         self.assertEqual(handler.responses[0]['response_type'], ResponseType.Accept)
+        self.assertIn('timestamp', handler.responses[0])
+        self.assertIn('latency', handler.responses[0])
+
+        # Test persistent storage
+        self.assertTrue(self.storage_path.exists())
+        
+        # Create new handler to test loading from file
+        new_handler = ResponseHandler(self.order_queue, storage_path=self.storage_path)
+        self.assertEqual(len(new_handler.responses), 1)
+        self.assertEqual(new_handler.responses[0]['order_id'], 123)
 
 
 if __name__ == "__main__":

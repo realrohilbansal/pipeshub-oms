@@ -36,6 +36,10 @@ class OrderResponse:
 
 class OrderManagement:
     def __init__(self, start_time, end_time, order_rate_limit):
+        # Add authentication-related attributes
+        self.username = None
+        self.is_authenticated = False
+        
         # Configurable time period and rate limits
         self.start_time = start_time
         self.end_time = end_time
@@ -63,21 +67,62 @@ class OrderManagement:
         current_time = datetime.now().time()
         return self.start_time <= current_time <= self.end_time
 
-    def logon(self):
+    def logon(self, username, password):
         """
-        Sends a logon message to the exchange when entering the trading window.
+        Authenticates user and sends a logon message to the exchange when entering the trading window.
+        
+        Args:
+            username (str): The user's username
+            password (str): The user's password
+            
+        Returns:
+            bool: True if authentication and logon successful, False otherwise
         """
-        if not self.active and self.is_within_time_window():
+        if not self.is_within_time_window():
+            print("Cannot logon outside trading hours")
+            return False
+            
+        if not self._authenticate(username, password):
+            print("Authentication failed")
+            return False
+            
+        if not self.active:
             self.active = True
+            self.username = username
             self.sendLogon()
+            return True
+        return False
 
     def logout(self):
         """
-        Sends a logout message to the exchange when exiting the trading window.
+        Sends a logout message to the exchange and clears authentication.
         """
-        if self.active and not self.is_within_time_window():
+        if self.active:
             self.active = False
             self.sendLogout()
+            self.username = None
+            self.is_authenticated = False
+
+    def _authenticate(self, username, password):
+        """
+        Placeholder for actual authentication logic.
+        
+        Args:
+            username (str): The user's username
+            password (str): The user's password
+            
+        Returns:
+            bool: True if authentication successful, False otherwise
+        """
+        # Replace this with actual authentication logic (e.g., database check)
+        valid_credentials = {
+            "trader1": "password123",
+            "trader2": "password456"
+        }
+        
+        is_valid = valid_credentials.get(username) == password
+        self.is_authenticated = is_valid
+        return is_valid
 
     def process_queue(self):
         """
@@ -105,6 +150,10 @@ class OrderManagement:
         """
         Handles incoming order requests. Processes Modify and Cancel requests.
         """
+        if not self.is_authenticated:
+            print(f"Order {request.m_orderId} rejected: User not authenticated")
+            return
+            
         if not self.is_within_time_window():
             print(f"Order {request.m_orderId} rejected: Outside time window")
             return
@@ -173,9 +222,10 @@ class OrderManagement:
         print(f"Order {request.m_orderId} sent to exchange")
 
 if __name__ == "__main__":
+    # Initialize the order management system
     order_system = OrderManagement(
         start_time=datetime.strptime("10:00:00", "%H:%M:%S").time(),
-        end_time=datetime.strptime("13:00:00", "%H:%M:%S").time(),
+        end_time=datetime.strptime("19:00:00", "%H:%M:%S").time(),
         order_rate_limit=5,
     )
 
@@ -183,21 +233,77 @@ if __name__ == "__main__":
     processing_thread = threading.Thread(target=order_system.process_queue, daemon=True)
     processing_thread.start()
 
-    for i in range(10):
-        order = OrderRequest(
-            m_symbolId=random.randint(1, 100),
-            m_price=random.uniform(100, 200),
-            m_qty=random.randint(1, 10),
-            m_side='B',
-            m_orderId=i,
-        )
-        order_system.handle_order_request(order)
-        time.sleep(0.1)
+    # Attempt login with invalid credentials
+    print("\n--- Testing invalid login ---")
+    if not order_system.logon("trader1", "wrongpassword"):
+        print("Invalid login rejected as expected")
 
-    for i in range(10):
-        response = OrderResponse(
-            m_orderId=i,
-            response_type=random.choice([ResponseType.Accept, ResponseType.Reject]),
+    # Login with valid credentials
+    print("\n--- Testing valid login ---")
+    if order_system.logon("trader1", "password123"):
+        print("Successfully logged in")
+        
+        # Send some test orders
+        print("\n--- Sending test orders ---")
+        for i in range(10):
+            order = OrderRequest(
+                m_symbolId=random.randint(1, 100),
+                m_price=random.uniform(100, 200),
+                m_qty=random.randint(1, 10),
+                m_side='B',
+                m_orderId=i,
+            )
+            order_system.handle_order_request(order)
+            time.sleep(0.1)
+
+        # Send some test responses
+        print("\n--- Processing test responses ---")
+        for i in range(10):
+            response = OrderResponse(
+                m_orderId=i,
+                response_type=random.choice([ResponseType.Accept, ResponseType.Reject]),
+            )
+            order_system.handle_order_response(response)
+            time.sleep(0.2)
+
+        # Test order modification
+        print("\n--- Testing order modification ---")
+        modify_order = OrderRequest(
+            m_symbolId=1,
+            m_price=150.0,
+            m_qty=5,
+            m_side='B',
+            m_orderId=0,
+            request_type=RequestType.Modify
         )
-        order_system.handle_order_response(response)
-        time.sleep(0.2)
+        order_system.handle_order_request(modify_order)
+
+        # Test order cancellation
+        print("\n--- Testing order cancellation ---")
+        cancel_order = OrderRequest(
+            m_symbolId=1,
+            m_price=0,
+            m_qty=0,
+            m_side='B',
+            m_orderId=1,
+            request_type=RequestType.Cancel
+        )
+        order_system.handle_order_request(cancel_order)
+
+        # Logout
+        print("\n--- Logging out ---")
+        order_system.logout()
+        
+        # Try to send order after logout (should be rejected)
+        print("\n--- Testing order after logout ---")
+        unauthorized_order = OrderRequest(
+            m_symbolId=1,
+            m_price=100.0,
+            m_qty=1,
+            m_side='B',
+            m_orderId=99
+        )
+        order_system.handle_order_request(unauthorized_order)
+
+    # Allow some time for the processing thread to complete
+    time.sleep(1)
