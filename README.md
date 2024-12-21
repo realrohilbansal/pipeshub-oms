@@ -12,4 +12,5 @@ Test files can be tested by running the following:
 python -m unittest tests/test_unit.py
 python -m unittest tests/test_integration.py
 ```
-# pipeshub-oms
+NOTE: For integration testing, make sure the acceptance time configured is correct for the time it is being tested in. It only checks whether the pipeline works correctly and tests will fail in case we are checking out of the acceptance window.
+

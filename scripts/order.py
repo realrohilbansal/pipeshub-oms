@@ -2,13 +2,15 @@ from enum import Enum
 import time
 
 class RequestType(Enum):
-    New = "New"
-    Modify = "Modify"
-    Cancel = "Cancel"
+    Unknown = 0
+    New = 1
+    Modify = 2
+    Cancel = 3
 
 class ResponseType(Enum):
-    Accept = "Accept"
-    Reject = "Reject"
+    Unknown = 0
+    Accept = 1
+    Reject = 2
 
 class OrderRequest:
     """
