@@ -78,10 +78,13 @@ class TestOrderManagementIntegration(unittest.TestCase):
 
         # Verify that some orders are queued due to rate limiting
         self.assertTrue(len(self.system.order_queue.queue) > 0)
-        self.assertLessEqual(
-            self.system.order_processor.orders_sent_this_second,
-            self.system.order_processor.order_rate_limit
-        )
+        
+        # Verify token bucket state
+        with self.system.order_processor.lock:
+            self.assertLessEqual(
+                self.system.order_processor.tokens,
+                self.system.order_processor.max_tokens
+            )
 
     def test_response_handling(self):
         """Test order response handling and latency calculation"""

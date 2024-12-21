@@ -84,11 +84,13 @@ class TestOrderSystem(unittest.TestCase):
     def test_order_processor_initialization(self):
         processor = OrderProcessor(5, self.order_queue)
         self.assertEqual(processor.order_rate_limit, 5)
-        self.assertEqual(processor.orders_sent_this_second, 0)
+        self.assertEqual(processor.tokens, 5)  # Should start with full bucket
+        self.assertEqual(processor.max_tokens, 5)
 
     @patch('time.time')
     def test_order_processor_rate_limiting(self, mock_time):
-        mock_time.return_value = 1000
+        # Set initial time
+        mock_time.return_value = 1000.0
         processor = OrderProcessor(2, self.order_queue)
         
         # Add three orders
@@ -96,24 +98,35 @@ class TestOrderSystem(unittest.TestCase):
             order = OrderRequest(1, 100.5, 10, 'B', i)
             self.order_queue.add_order(order)
         
-        # Process orders once without the infinite loop
-        processor.send = Mock()  # Mock the send method to avoid actual sending
+        # Process orders
+        processor.send = Mock()  # Mock the send method
         
         with processor.lock:
-            current_time = int(mock_time.return_value)
-            if current_time != processor.current_second:
-                processor.orders_sent_this_second = 0
-                processor.current_second = current_time
-
-            while (processor.orders_sent_this_second < processor.order_rate_limit and 
-                   self.order_queue.queue):
+            processor.refill_tokens()  # Should have full tokens
+            
+            # Should process first two orders
+            while processor.tokens >= 1 and self.order_queue.queue:
                 order = self.order_queue.queue.popleft()
                 processor.send(order)
-                processor.orders_sent_this_second += 1
+                processor.tokens -= 1
         
         self.assertEqual(len(self.order_queue.queue), 1)  # One order should remain
-        self.assertEqual(processor.orders_sent_this_second, 2)  # Should have processed 2 orders
+        self.assertEqual(processor.tokens, 0)  # Should have used all tokens
         self.assertEqual(processor.send.call_count, 2)  # Send should have been called twice
+
+    @patch('time.time')
+    def test_token_refill(self, mock_time):
+        mock_time.return_value = 1000.0
+        processor = OrderProcessor(2, self.order_queue)  # 2 tokens per second
+        
+        # Use all tokens
+        processor.tokens = 0
+        
+        # Advance time by 0.5 seconds
+        mock_time.return_value = 1000.5
+        processor.refill_tokens()
+        
+        self.assertEqual(processor.tokens, 1)  # Should have gained 1 token (2 tokens/sec * 0.5 sec)
 
     # ResponseHandler Tests
     def test_response_handler(self):
