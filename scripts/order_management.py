@@ -1,4 +1,5 @@
 from datetime import datetime
+import threading
 
 import os, sys
 
@@ -24,6 +25,13 @@ class OrderManagement:
         self.response_handler = ResponseHandler(self.order_queue)
         self.active = False
 
+        # Add thread for order processing
+        self.processing_thread = threading.Thread(
+            target=self.order_processor.process_queue,
+            daemon=True
+        )
+        self.processing_thread.start()
+
     def is_within_time_window(self):
         """
         Checks if the current time is within the trading window
@@ -34,34 +42,42 @@ class OrderManagement:
     def logon(self):
         if not self.active and self.is_within_time_window():
             self.active = True
-            print("Logon message sent to exchange")
+            # Thread-safe logon
+            threading.Thread(
+                target=lambda: print("Logon message sent to exchange"),
+                daemon=True
+            ).start()
 
     def logout(self):
         if self.active and not self.is_within_time_window():
             self.active = False
-            print("Logout message sent to exchange")
+            # Thread-safe logout
+            threading.Thread(
+                target=lambda: print("Logout message sent to exchange"),
+                daemon=True
+            ).start()
 
     def handle_order_request(self, order_request):
         """
-        Handles an order request
-
-        params:
-            order_request: the order request to handle
+        Handles an order request in a separate thread
         """
-        if not self.is_within_time_window():
-            print(f"Order {order_request.m_orderId} rejected: Outside time window")
-            return
-        else:
-            self.order_queue.handle_request(order_request)
+        def process_request():
+            if not self.is_within_time_window():
+                print(f"Order {order_request.m_orderId} rejected: Outside time window")
+                return
+            else:
+                self.order_queue.handle_request(order_request)
+
+        threading.Thread(target=process_request, daemon=True).start()
 
     def handle_order_response(self, response):
         """
-        Handles an order response
-
-        params:
-            response: the order response to handle
+        Handles an order response in a separate thread
         """
-        self.response_handler.handle_response(response)
+        threading.Thread(
+            target=lambda: self.response_handler.handle_response(response),
+            daemon=True
+        ).start()
 
 if __name__ == "__main__":
     order_management = OrderManagement(
