@@ -6,35 +6,41 @@ class OrderProcessor:
     Processes orders and sends them to the exchange (rate limited)
     """
     def __init__(self, order_rate_limit, order_queue):
-        self.order_rate_limit = order_rate_limit
+        self.order_rate_limit = order_rate_limit  # tokens per second
         self.order_queue = order_queue
         self.lock = Lock()
-        self.orders_sent_this_second = 0
-        self.current_second = int(time.time())
+        
+        # Token bucket parameters
+        self.tokens = order_rate_limit  # Start with full bucket
+        self.max_tokens = order_rate_limit
+        self.last_update = time.time()
         
         # Start processing thread
         self.running = True
         self.processing_thread = Thread(target=self.process_queue, daemon=True)
         self.processing_thread.start()
 
+    def refill_tokens(self):
+        """Refills tokens based on elapsed time"""
+        now = time.time()
+        time_passed = now - self.last_update
+        new_tokens = time_passed * self.order_rate_limit
+        self.tokens = min(self.tokens + new_tokens, self.max_tokens)
+        self.last_update = now
+
     def process_queue(self):
-        """
-        Processes the order queue in a separate thread
-        """
+        """Processes the order queue using token bucket algorithm"""
         while self.running:
-            with self.lock:
-                current_time = int(time.time())
-                if current_time != self.current_second:
-                    self.orders_sent_this_second = 0
-                    self.current_second = current_time
-
-                while (self.orders_sent_this_second < self.order_rate_limit and 
-                       self.order_queue.queue):
-                    order = self.order_queue.queue.popleft()
-                    self.send(order)
-                    self.orders_sent_this_second += 1
-
-            time.sleep(0.01)
+            if self.order_queue.queue:
+                with self.lock:
+                    self.refill_tokens()
+                    
+                    if self.tokens >= 1:
+                        order = self.order_queue.queue.popleft()
+                        self.send(order)
+                        self.tokens -= 1
+                    
+            time.sleep(0.01)  # Small sleep to prevent CPU spinning
 
     def send(self, order):
         """
