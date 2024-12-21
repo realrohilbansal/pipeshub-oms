@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
+import json
 
 import os, sys
 
@@ -8,10 +9,10 @@ if cwd.endswith("scripts"):
     os.chdir("..")
 sys.path.append(os.getcwd())
 
+from scripts.order import OrderRequest, RequestType, OrderResponse, ResponseType
 from scripts.order_queue import OrderQueue
 from scripts.order_processor import OrderProcessor
 from scripts.response_handler import ResponseHandler
-from scripts.order import OrderRequest, RequestType, OrderResponse, ResponseType
 
 class OrderManagement:
     """
@@ -89,13 +90,63 @@ class OrderManagement:
         ).start()
 
 if __name__ == "__main__":
+    import time
+    from pathlib import Path
+
+    # Create a test storage path
+    storage_path = Path("test_responses.json")
+    
+    # Initialize system during trading hours
+    current_time = datetime.now()
+    start_time = (current_time - timedelta(hours=1)).time()
+    end_time = (current_time + timedelta(hours=1)).time()
+    
     order_management = OrderManagement(
-        start_time=datetime.strptime("10:00:00", "%H:%M:%S").time(),
-        end_time=datetime.strptime("19:00:00", "%H:%M:%S").time(),
+        start_time=start_time,
+        end_time=end_time,
         order_rate_limit=5,
+        response_storage_path=storage_path
     )
 
+    # Start the system
     order_management.logon()
-    order_management.handle_order_request(OrderRequest(1, RequestType.New, "AAPL", "BUY", 100, 100))
-    order_management.handle_order_response(OrderResponse(1, ResponseType.Accept))
-    order_management.logout()
+    time.sleep(0.1)  # Wait for logon
+    
+    # Create and send a new order
+    new_order = OrderRequest(
+        m_symbolId=1,
+        m_price=100.5,
+        m_qty=10,
+        m_side='B',
+        m_orderId=1001,
+        request_type=RequestType.New
+    )
+    print("\nSending new order...")
+    order_management.handle_order_request(new_order)
+    time.sleep(0.1)  # Wait for order processing
+
+    # Send an accept response
+    print("\nSending accept response...")
+    accept_response = OrderResponse(1001, ResponseType.Accept)
+    order_management.handle_order_response(accept_response)
+    time.sleep(0.1)  # Wait for response processing
+
+    # Verify response storage
+    print("\nVerifying stored responses...")
+    if storage_path.exists():
+        with open(storage_path, 'r') as f:
+            stored_data = json.load(f)
+            print(f"Stored responses: {json.dumps(stored_data, indent=2)}")
+            
+        # Create new system instance to verify loading
+        print("\nCreating new system instance to verify loading...")
+        new_system = OrderManagement(
+            start_time=start_time,
+            end_time=end_time,
+            order_rate_limit=5,
+            response_storage_path=storage_path
+        )
+        print(f"Loaded responses: {len(new_system.response_handler.responses)}")
+        if new_system.response_handler.responses:
+            response = new_system.response_handler.responses[0]
+            print(f"First response details: {response}")
